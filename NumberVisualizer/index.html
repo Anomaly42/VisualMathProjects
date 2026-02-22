@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Number Visualizer</title>
+</head>
+<body style="margin:0px;">
+    <canvas id="MainCanvas"></canvas>
+    <script>
+
+        canvas = document.getElementById("MainCanvas");
+        ctx = canvas.getContext("2d");
+        canvas.width = window.innerWidth
+        canvas.height = window.innerHeight
+
+        class Vector2 {
+            constructor(x, y){
+                this.x = x;
+                this.y = y;
+            }
+
+            polarCoords() {
+                return {
+                    "r": this.mod(),
+                    "theta": Math.atan2(this.y, this.x)
+                }
+            }
+
+            newFromPolar(polar) {
+                let r = polar.r;
+                let theta = polar.theta;
+                return new Vector2(r*Math.cos(theta), r*Math.sin(theta));
+            }
+
+            rotatedBy(delta_angle) {
+                let polar = this.polarCoords();
+                polar.theta += delta_angle;
+                return this.newFromPolar(polar);
+            }
+
+            rotatedTo(angle) {
+                let polar = this.polarCoords();
+                polar.theta = angle;
+                return this.newFromPolar(polar);
+            }
+
+            scaledBy(factor) {
+                return new Vector2(factor*this.x, factor*this.y);
+            }
+
+            scaledTo(scale) {
+                return this.normalized().scaledBy(scale);
+            }
+
+            addedBy(vec) {
+                return new Vector2(this.x + vec.x, this.y + vec.y);
+            }
+
+            subtractedBy(vec) {
+                return this.addedBy(vec.scaledBy(-1));
+            }
+
+            normalized() {
+                let r = this.mod();
+                return new Vector2(this.x/r, this.y/r);
+            }
+
+            mod_squared() {
+                return this.x*this.x + this.y*this.y;
+            }
+
+            mod() {
+                return Math.sqrt(this.mod_squared());
+            }
+
+
+        }
+
+        class Polygon {
+            constructor(sides, center, centerToFirstVertex) {
+                this.sides = sides;
+                this.center = center;
+                this.centerToFirstVertex = centerToFirstVertex;
+                this.vertices = this.computeAllVertexCoords();
+            }
+
+            computeAllVertexCoords() {
+                let angular_offset = 0;
+                if (this.sides == 2) {angular_offset = Math.PI/2;}
+                return Array.from({length: this.sides}, (_, i) => 
+            this.center.addedBy(this.centerToFirstVertex.rotatedBy(angular_offset + 2*i*Math.PI/this.sides)))
+            }
+
+            draw(fillStyle, strokeStyle, lineWidth) {
+                if (fillStyle) ctx.fillStyle = fillStyle;
+                if (strokeStyle) ctx.strokeStyle = strokeStyle;
+                if (lineWidth) ctx.lineWidth = lineWidth;
+                
+                const v0 = this.vertices[0];
+
+                ctx.beginPath();
+                ctx.moveTo(v0.x, v0.y);
+
+                for (let i = 1; i < this.sides; i++) {
+                    const v = this.vertices[i];
+                    ctx.lineTo(v.x, v.y);
+                }
+
+                ctx.closePath();   // closes back to v0
+                ctx.fill();
+                ctx.stroke();
+            }
+
+        }
+
+        function computeUngroupedFactorsOf(num) {
+            let factors = [];
+            let k = 2;
+            while (num > 1) {
+                if (num % k == 0) {
+                    factors.push(k);
+                    num /= k;
+                }
+                else {k++;}
+            }
+            return factors
+        }
+
+        function colorFromSides(sides, alpha = 0.85) {
+            // Clamp alpha to [0, 1] and convert to hex
+            const a = Math.round(Math.max(0, Math.min(1, alpha)) * 255)
+                            .toString(16)
+                            .padStart(2, '0');
+
+            const primeColors = {
+                3:  "#e63946", // red
+                5:  "#f1fa3c", // yellow
+                7:  "#457b9d", // blue
+                11: "#ffa000", // orange
+                13: "#ff7f51", // coral
+                17: "#43aa8b", // green
+                19: "#f72585"  // magenta
+            };
+
+            const baseColor = primeColors[sides] || "#6a4c93"; // default for non-primes / large polygons
+
+            return baseColor + a;
+        }
+
+        function numberVisualizer(
+            number = 210,
+            center,
+            centerToFirstVertex
+        ) {
+
+            const factors = computeUngroupedFactorsOf(number);
+
+            function recursiveUtil(factorIndex, center, centerToFirstVertex) {
+                if (factorIndex >= factors.length) return;
+
+                poly = new Polygon(factors[factorIndex], center, centerToFirstVertex);
+                poly.draw(fillStyle=colorFromSides(poly.sides));
+                if (!(factorIndex >= factors.length)){
+                    for (let vertex of poly.vertices) {
+                        recursiveUtil(factorIndex + 1,
+                            vertex,
+                            vertex.subtractedBy(center).scaledTo((0.95/(Math.sqrt(factors[factorIndex + 1])))*centerToFirstVertex.mod())
+                        )
+                    }
+                }
+            }
+
+            recursiveUtil(0, center, centerToFirstVertex);
+        }
+
+        function clear() {
+            ctx.fillStyle = "black";
+            ctx.fillRect(0,0,canvas.width, canvas.height);
+        }
+
+        function drawPrimeFactorization(factors, cx, y) {
+            if (!factors || factors.length === 0) return;
+
+            // Step 1: group factors
+            const grouped = {};
+            for (const f of factors) {
+                grouped[f] = (grouped[f] || 0) + 1;
+            }
+
+            const entries = Object.entries(grouped);
+
+            // Fonts
+            const baseFontSize = 80;
+            const expFontSize = 52;
+
+            ctx.textBaseline = "alphabetic";
+            ctx.fillStyle = "white";
+
+            // Step 2: measure total width (for centering)
+            let totalWidth = 0;
+            entries.forEach(([prime, count], i) => {
+                ctx.font = `${baseFontSize}px Arial`;
+                totalWidth += ctx.measureText(prime).width;
+
+                if (count > 1) {
+                    ctx.font = `${expFontSize}px Arial`;
+                    totalWidth += ctx.measureText(count).width;
+                }
+
+                if (i < entries.length - 1) {
+                    ctx.font = `${baseFontSize}px Arial`;
+                    totalWidth += ctx.measureText(" × ").width;
+                }
+            });
+
+            // Starting x so it's centered at cx
+            let x = cx - totalWidth / 2;
+
+            // Step 3: draw
+            entries.forEach(([prime, count], i) => {
+                // Draw prime
+                ctx.font = `${baseFontSize}px Arial`;
+                ctx.fillText(prime, x, y);
+                x += ctx.measureText(prime).width;
+
+                // Draw exponent (superscript)
+                if (count > 1) {
+                    ctx.font = `${expFontSize}px Arial`;
+                    ctx.fillText(count, x, y - baseFontSize * 0.5);
+                    x += ctx.measureText(count).width;
+                }
+
+                // Draw multiplication symbol
+                if (i < entries.length - 1) {
+                    ctx.font = `${baseFontSize}px Arial`;
+                    ctx.fillText(" × ", x, y);
+                    x += ctx.measureText(" × ").width;
+                }
+            });
+        }
+
+        keyCodeMap = {
+            "38" : {
+                "key": "UP",
+                "delta": 50
+            },
+            "40" : {
+                "key": "DOWN",
+                "delta": -50
+            },
+            "37" : {
+                "key": "LEFT",
+                "delta": -1
+            },
+            "39" : {
+                "key": "RIGHT",
+                "delta": 1
+            },
+        }
+
+        function getKeyCodeData(keyCode) {return keyCodeMap[keyCode]}
+
+        ctx.fillStyle = '#000000FF'
+        ctx.strokeStyle = 'white'
+        ctx.lineWidth = 3
+        
+        const initialCenter = new Vector2(canvas.width/2, canvas.height*0.525);
+        const initialCenterToFirstVertex = new Vector2(0.26*canvas.width, 0).rotatedBy(-Math.PI/2);
+        
+        
+        let number = 2;
+        let numberChanged = false;
+        
+        clear()
+        numberVisualizer(number, initialCenter, initialCenterToFirstVertex);
+
+        function update() {
+            console.log(number)
+
+            document.onkeydown = function(e) {
+                keydata = keyCodeMap[e.keyCode];
+                delta = keydata.delta;
+                if (number + delta >= 2) {number += delta; numberChanged = true;}
+            }
+
+            number = Math.floor(number);
+            if (number < 2) number = 2; // safety checks
+
+            // //Write the number
+            // ctx.beginPath();
+            // ctx.font = "100px Arial";
+            // ctx.strokeText(number, 150, 150);
+            // ctx.closePath();
+
+            // //Write the factorization
+            // factors = computeUngroupedFactorsOf(number);
+            // drawPrimeFactorization(factors, canvas.width/2, canvas.height - 200);
+
+            if (numberChanged){
+                clear();       
+                numberVisualizer(number, initialCenter, initialCenterToFirstVertex);
+            }
+
+            numberChanged = false;
+            requestAnimationFrame(update);
+
+        }
+
+        requestAnimationFrame(update);
+        
+    </script>
+</body>
+</html>
