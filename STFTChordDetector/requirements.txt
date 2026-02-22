@@ -1,0 +1,8 @@
+numpy
+matplotlib
+librosa
+imageio
+imageio-ffmpeg
+pygame
+sounddevice
+jupyter
